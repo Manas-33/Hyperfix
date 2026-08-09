@@ -88,8 +88,11 @@ kbd{font-family:var(--display);font-size:.78rem;font-weight:600;color:var(--ink)
   text-align:center;box-shadow:0 1px 0 var(--line)}
 
 /* Focus mode — spotlight the one thing, dim the rest. Click outside to exit. */
-.focus-backdrop{position:fixed;inset:0;background:rgba(12,9,5,.6);backdrop-filter:blur(1.5px);z-index:40;animation:pop .18s ease}
-.wrap.focusmode .col.doing{position:relative;z-index:50}
+.focus-backdrop{position:fixed;inset:0;background:rgba(10,7,4,.8);backdrop-filter:blur(2.5px);z-index:40;animation:pop .18s ease}
+/* Lift just the task card out of the (dimmed) column and zoom it in. */
+.wrap.focusmode .col.doing .card{z-index:50;transform:scale(1.14);transform-origin:center;
+  transition:transform .26s cubic-bezier(.34,1.4,.5,1)}
+@media(prefers-reduced-motion:reduce){.wrap.focusmode .col.doing .card{transform:none}}
 
 .dump{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
   box-shadow:var(--shadow);padding:14px;margin-bottom:24px}
@@ -132,7 +135,7 @@ textarea::placeholder{color:var(--faint)}
 .dot.todo{background:var(--todo)} .dot.doing{background:var(--focus)} .dot.done{background:var(--done)}
 .count{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.82rem;font-weight:500}
 .count.full{color:var(--focus);font-weight:600}
-.col.doing{border-color:var(--focus-line);background:var(--focus-tint);box-shadow:var(--focus-glow)}
+.col.doing{border-color:var(--focus-line);background:var(--focus-tint);box-shadow:var(--focus-glow);transition:transform .24s cubic-bezier(.34,1.35,.5,1),box-shadow .24s ease}
 .col.todo,.col.done{opacity:.9}
 
 .limit{display:flex;align-items:center;gap:5px;font-size:.75rem;color:var(--muted);margin:0 4px 10px}
@@ -159,6 +162,7 @@ textarea::placeholder{color:var(--faint)}
 .chip.done:hover{filter:brightness(1.06)}
 .chip.ai{color:var(--ai);background:var(--ai-tint);border-color:var(--ai-line)}
 .chip.ai:hover{filter:brightness(1.02);border-color:var(--ai)}
+.chip.icon{padding:0;width:30px;height:30px;min-width:30px;display:inline-flex;align-items:center;justify-content:center;font-size:.92rem;line-height:1}
 .x{margin-left:auto;color:var(--faint);background:none;border:none;cursor:pointer;font-size:1.05rem;line-height:1;padding:2px 4px}
 .x:hover{color:var(--danger)}
 

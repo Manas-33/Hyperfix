@@ -550,7 +550,6 @@ function Card({ card, col, busySteps, focusAddId, dragId, clearMarkers, onMove, 
   const [editing, setEditing] = useState(false);
 
   const hasSteps = card.steps && card.steps.length;
-  const stepLabel = card.stepsOpen ? '⚡ Hide steps' : (hasSteps ? '⚡ Steps' : '⚡ Break down');
 
   return (
     <div
@@ -574,16 +573,15 @@ function Card({ card, col, busySteps, focusAddId, dragId, clearMarkers, onMove, 
       <div className="card-actions">
         {col === 'todo' && <button className="chip go" onClick={() => onMove(card.id, 'doing')}>Start →</button>}
         {col === 'doing' && <>
-          <button className="chip" onClick={() => onMove(card.id, 'todo')}>← Back</button>
-          <button className="chip done" onClick={() => onMove(card.id, 'done')}>Done ✓</button>
+          <button className="chip icon" title="Back to To Do" onClick={() => onMove(card.id, 'todo')}>←</button>
+          <button className="chip done icon" title="Mark done" onClick={() => onMove(card.id, 'done')}>✓</button>
         </>}
         {col === 'done' && <button className="chip" onClick={() => onMove(card.id, 'todo')}>↩ Reopen</button>}
-        {col !== 'done' && <button className="chip ai" onClick={() => onToggleSteps(card.id)}>{stepLabel}</button>}
-        {col === 'done' && hasSteps && <button className="chip ai" onClick={() => onToggleSteps(card.id)}>{card.stepsOpen ? 'Hide steps' : 'Steps'}</button>}
+        {col !== 'done' && !hasSteps && <button className="chip ai" onClick={() => onToggleSteps(card.id)}>⚡ Break down</button>}
         <button className="x" title="Delete" onClick={() => onDel(card.id)}>×</button>
       </div>
 
-      {card.stepsOpen && (
+      {(hasSteps || card.stepsOpen) && (
         <StepsPanel
           card={card}
           busy={busySteps === card.id}
@@ -606,6 +604,7 @@ function StepsPanel({ card, busy, focusAddId, onGenerate, onToggleStep, onDelete
   const addRef = useRef(null);
   const [addText, setAddText] = useState('');
   const [localInstr, setLocalInstr] = useState(card.instr || '');
+  const [editSteps, setEditSteps] = useState(false);
 
   useEffect(() => { setLocalInstr(card.instr || ''); }, [card.instr]);
   useEffect(() => {
@@ -648,22 +647,12 @@ function StepsPanel({ card, busy, focusAddId, onGenerate, onToggleStep, onDelete
           <span className="caret">{card.listCollapsed ? '▸' : '▾'}</span>Steps
           <span className="cnt">{doneCount} / {card.steps.length} done</span>
         </button>
-        <button className={'steps-regen-link' + (card.regenOpen ? ' on' : '')} onClick={() => onToggleRegen(card.id)}>
-          {card.regenOpen ? 'Cancel' : 'Regenerate'}
-        </button>
-      </div>
-
-      {card.regenOpen && (
-        <div className="steps-instr">
-          <textarea placeholder="refine: extra instructions to regenerate…"
-            value={localInstr}
-            onChange={(e) => setLocalInstr(e.target.value)}
-            onBlur={() => onSetInstr(card.id, localInstr)} />
-          <button className="mini-btn" disabled={busy} onClick={() => onGenerate(card.id, localInstr)}>
-            {busy ? <><span className="spin" />Thinking…</> : 'Regenerate'}
+        {!card.listCollapsed && (
+          <button className={'steps-regen-link' + (editSteps ? ' on' : '')} onClick={() => setEditSteps((v) => !v)}>
+            {editSteps ? 'Done' : 'Edit'}
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {!card.listCollapsed && <>
         <ul className="steplist">
@@ -671,11 +660,28 @@ function StepsPanel({ card, busy, focusAddId, onGenerate, onToggleStep, onDelete
             <li key={i} className={s.done ? 'checked' : ''}>
               <input type="checkbox" checked={!!s.done} onChange={() => onToggleStep(card.id, i)} />
               <span>{s.text}</span>
-              <button className="step-x" title="Delete step" onClick={() => onDeleteStep(card.id, i)}>×</button>
+              {editSteps && <button className="step-x" title="Delete step" onClick={() => onDeleteStep(card.id, i)}>×</button>}
             </li>
           ))}
         </ul>
-        {manualAdd}
+
+        {editSteps && <>
+          {manualAdd}
+          <button className={'steps-regen-link' + (card.regenOpen ? ' on' : '')} style={{ marginTop: 8 }} onClick={() => onToggleRegen(card.id)}>
+            {card.regenOpen ? 'Cancel regenerate' : '↻ Regenerate with AI'}
+          </button>
+          {card.regenOpen && (
+            <div className="steps-instr" style={{ marginTop: 8 }}>
+              <textarea placeholder="refine: extra instructions to regenerate…"
+                value={localInstr}
+                onChange={(e) => setLocalInstr(e.target.value)}
+                onBlur={() => onSetInstr(card.id, localInstr)} />
+              <button className="mini-btn" disabled={busy} onClick={() => onGenerate(card.id, localInstr)}>
+                {busy ? <><span className="spin" />Thinking…</> : 'Regenerate'}
+              </button>
+            </div>
+          )}
+        </>}
       </>}
     </div>
   );
