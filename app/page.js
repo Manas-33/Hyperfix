@@ -48,6 +48,9 @@ export default function Page() {
   const [organizing, setOrganizing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
+  const [focusMode, setFocusMode] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const dumpRef = useRef(null);
 
   const applyingRemote = useRef(false);
   const writeTimer = useRef(null);
@@ -219,11 +222,13 @@ export default function Page() {
       const f = findCard(b, id); if (!f) return;
       if (to === 'doing' && f.col !== 'doing' && b.doing.length >= b.limit) { toast('One thing at a time. Finish or free up In Progress first.'); return; }
       b[f.col].splice(f.idx, 1);
-      if (to === 'done' && !f.card.counted) { b.cleared++; f.card.counted = true; }
+      // Count reflects what's actually in Done: +1 entering, -1 leaving.
+      if (to === 'done' && f.col !== 'done') b.cleared++;
+      else if (f.col === 'done' && to !== 'done') b.cleared = Math.max(0, b.cleared - 1);
       b[to].push(f.card);
     });
   }
-  function del(id) { mutate((b) => { const f = findCard(b, id); if (f) b[f.col].splice(f.idx, 1); }); }
+  function del(id) { mutate((b) => { const f = findCard(b, id); if (!f) return; if (f.col === 'done') b.cleared = Math.max(0, b.cleared - 1); b[f.col].splice(f.idx, 1); }); }
   function editText(id, text) { const t = text.trim(); if (!t) return; mutate((b) => { const f = findCard(b, id); if (f) f.card.text = t; }); }
   function setLimit(n) { mutate((b) => { b.limit = n; }); }
   function clearDone() { mutate((b) => { b.done = []; }); }
@@ -272,7 +277,9 @@ export default function Page() {
       const crossIn = colId !== f.col;
       if (colId === 'doing' && crossIn && b.doing.length >= b.limit) { toast('In Progress is full. Reorder within it, or finish something.'); return; }
       const [card] = b[f.col].splice(f.idx, 1);
-      if (colId === 'done' && crossIn && !card.counted) { b.cleared++; card.counted = true; }
+      // Count reflects what's actually in Done: +1 entering, -1 leaving.
+      if (colId === 'done' && crossIn) b.cleared++;
+      else if (f.col === 'done' && crossIn) b.cleared = Math.max(0, b.cleared - 1);
       let idx = afterId == null ? b[colId].length : b[colId].findIndex((c) => c.id === afterId);
       if (idx < 0) idx = b[colId].length;
       b[colId].splice(idx, 0, card);
@@ -304,6 +311,46 @@ export default function Page() {
     try { r.start(); } catch (e) {}
   }
 
+  // Focus mode auto-exits when the one thing is finished, so you never get stranded
+  // on an empty screen with To Do hidden.
+  useEffect(() => {
+    if (focusMode && board && board.doing.length === 0) setFocusMode(false);
+  }, [focusMode, board]);
+
+  function toggleFocus() {
+    if (!focusMode && (!board || board.doing.length === 0)) {
+      toast('Pick one thing to focus on first.');
+      return;
+    }
+    setFocusMode((f) => !f);
+  }
+
+  // Keyboard shortcuts. All single-key ones are ignored while typing in a field.
+  useEffect(() => {
+    function onKey(e) {
+      const el = document.activeElement;
+      const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+      // Esc: back out of whatever is open (help > settings > focus mode).
+      if (e.key === 'Escape') {
+        if (helpOpen) { setHelpOpen(false); return; }
+        if (settingsOpen) { setSettingsOpen(false); return; }
+        if (focusMode) { setFocusMode(false); return; }
+        return;
+      }
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFocus(); }
+      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); dumpRef.current?.focus(); }
+      else if (e.key === 's' || e.key === 'S') {
+        e.preventDefault();
+        if (board && board.todo.length) move(board.todo[0].id, 'doing');
+        else toast('Nothing in To Do to start.');
+      }
+      else if (e.key === '?') { e.preventDefault(); setHelpOpen((h) => !h); }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [focusMode, settingsOpen, helpOpen, board]);
+
   if (!board) {
     return <div className="wrap"><div className="loading">Loading your board…</div></div>;
   }
@@ -311,7 +358,8 @@ export default function Page() {
   const micSupported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
   return (
-    <div className="wrap">
+    <div className={'wrap' + (focusMode ? ' focusmode' : '')}>
+      {focusMode && <div className="focus-backdrop" onClick={() => setFocusMode(false)} />}
       <header className="top">
         <div>
           <h1>Hyperfix</h1>
@@ -331,6 +379,14 @@ export default function Page() {
               : authKnown && <button className="signbtn" onClick={signIn}>Sign in to sync</button>
           )}
           {!firebaseReady && <span className="sync-pill local">Local only</span>}
+          <button
+            className={'focusbtn' + (focusMode ? ' on' : '')}
+            onClick={toggleFocus}
+            title={focusMode ? 'Show the whole board' : 'Hide everything but the one thing'}
+          >
+            {focusMode ? '← Show all' : '◎ Focus'}
+          </button>
+          <button className="gear" onClick={() => setHelpOpen(true)} title="Keyboard shortcuts (?)">⌨</button>
           <button className="gear" onClick={() => setSettingsOpen(true)} title="Settings">⚙</button>
         </div>
       </header>
@@ -339,6 +395,7 @@ export default function Page() {
         <p className="dump-label">Brain dump <small>(just empty your head, AI sorts it into clean tasks)</small></p>
         <div className="ta-wrap">
           <textarea
+            ref={dumpRef}
             className="dumpbox"
             value={dump}
             onChange={(e) => setDump(e.target.value)}
@@ -455,6 +512,26 @@ export default function Page() {
                 ? <button className="link-btn" onClick={() => { signOutNow(); setSettingsOpen(false); }}>Sign out</button>
                 : <span />}
               <button className="btn btn-primary" onClick={() => setSettingsOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {helpOpen && (
+        <div className="overlay" onClick={(e) => { if (e.target.classList.contains('overlay')) setHelpOpen(false); }}>
+          <div className="modal">
+            <h2>Keyboard shortcuts</h2>
+            <p className="sub">Work the board without touching the mouse.</p>
+            <ul className="keylist">
+              <li><kbd>D</kbd><span>Jump to the brain dump</span></li>
+              <li><kbd>S</kbd><span>Start next — move the top To Do into In Progress</span></li>
+              <li><kbd>F</kbd><span>Focus mode — spotlight the one thing</span></li>
+              <li><kbd>Esc</kbd><span>Exit focus mode / close dialogs</span></li>
+              <li><kbd>?</kbd><span>Show or hide this list</span></li>
+              <li><kbd>⌘/Ctrl</kbd><kbd>↵</kbd><span>Organize the brain dump with AI</span></li>
+            </ul>
+            <div className="modal-row" style={{ justifyContent: 'flex-end' }}>
+              <button className="btn btn-primary" onClick={() => setHelpOpen(false)}>Got it</button>
             </div>
           </div>
         </div>
