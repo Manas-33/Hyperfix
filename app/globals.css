@@ -92,6 +92,8 @@ kbd{font-family:var(--display);font-size:.78rem;font-weight:600;color:var(--ink)
 /* Lift just the task card out of the (dimmed) column and zoom it in. */
 .wrap.focusmode .col.doing .card{z-index:50;transform:scale(1.4);transform-origin:center;
   transition:transform .26s cubic-bezier(.34,1.4,.5,1)}
+/* Give each zoomed card room so multiple don't overlap (transform doesn't reflow siblings). */
+.wrap.focusmode .col.doing .card + .card{margin-top:8rem}
 @media(prefers-reduced-motion:reduce){.wrap.focusmode .col.doing .card{transform:none}}
 
 .dump{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
