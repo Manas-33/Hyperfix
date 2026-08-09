@@ -13,9 +13,9 @@ const COLS = [
 const BOARD_KEY = 'cyh:board';
 const MODEL_KEY = 'cyh:model';
 const MODELS = [
-  ['claude-sonnet-4-6', 'Sonnet 4.6 — smart & balanced (recommended)'],
-  ['claude-haiku-4-5-20251001', 'Haiku 4.5 — fastest & cheapest'],
-  ['claude-sonnet-5', 'Sonnet 5 — smartest, priciest'],
+  ['claude-sonnet-4-6', 'Sonnet 4.6 (smart, balanced, recommended)'],
+  ['claude-haiku-4-5-20251001', 'Haiku 4.5 (fastest, cheapest)'],
+  ['claude-sonnet-5', 'Sonnet 5 (smartest, priciest)'],
 ];
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -101,7 +101,7 @@ export default function Page() {
             } catch (e) {}
           }
         } else {
-          // first run on this account — seed with whatever is local
+          // first run on this account, seed with whatever is local
           let b = null;
           try { const raw = localStorage.getItem(BOARD_KEY); if (raw) b = JSON.parse(raw); } catch (e) {}
           setDoc(ref, { json: JSON.stringify(normalize(b)), updatedAt: Date.now() }).catch(() => {});
@@ -217,7 +217,7 @@ export default function Page() {
   function move(id, to) {
     mutate((b) => {
       const f = findCard(b, id); if (!f) return;
-      if (to === 'doing' && f.col !== 'doing' && b.doing.length >= b.limit) { toast('One thing at a time — finish or free up In Progress first.'); return; }
+      if (to === 'doing' && f.col !== 'doing' && b.doing.length >= b.limit) { toast('One thing at a time. Finish or free up In Progress first.'); return; }
       b[f.col].splice(f.idx, 1);
       if (to === 'done') b.cleared++;
       b[to].push(f.card);
@@ -270,7 +270,7 @@ export default function Page() {
     mutate((b) => {
       const f = findCard(b, id); if (!f) return;
       const crossIn = colId !== f.col;
-      if (colId === 'doing' && crossIn && b.doing.length >= b.limit) { toast('In Progress is full — reorder within it, or finish something.'); return; }
+      if (colId === 'doing' && crossIn && b.doing.length >= b.limit) { toast('In Progress is full. Reorder within it, or finish something.'); return; }
       const [card] = b[f.col].splice(f.idx, 1);
       if (colId === 'done' && crossIn) b.cleared++;
       let idx = afterId == null ? b[colId].length : b[colId].findIndex((c) => c.id === afterId);
@@ -290,7 +290,7 @@ export default function Page() {
     const a = getAuthI();
     if (!a) return;
     await signOut(a);
-    toast('Signed out — now local to this browser.');
+    toast('Signed out. Now local to this browser.');
   }
 
   function saveModel(m) { setModel(m); try { localStorage.setItem(MODEL_KEY, m); } catch (e) {} }
@@ -336,7 +336,7 @@ export default function Page() {
       </header>
 
       <div className="dump">
-        <p className="dump-label">Brain dump <small>— just empty your head. AI sorts it into clean tasks.</small></p>
+        <p className="dump-label">Brain dump <small>(just empty your head, AI sorts it into clean tasks)</small></p>
         <div className="ta-wrap">
           <textarea
             className="dumpbox"
@@ -424,7 +424,7 @@ export default function Page() {
         <div className="overlay" onClick={(e) => { if (e.target.classList.contains('overlay')) setSettingsOpen(false); }}>
           <div className="modal">
             <h2>Settings</h2>
-            <p className="sub">Your AI key lives on the server — never in this browser.</p>
+            <p className="sub">Your AI key lives on the server, never in this browser.</p>
 
             {firebaseReady ? (
               user ? (
@@ -435,7 +435,7 @@ export default function Page() {
               ) : (
                 <div className="field">
                   <button className="btn btn-primary" onClick={signIn} style={{ width: '100%' }}>Sign in with Google to sync</button>
-                  <div className="hint" style={{ marginTop: 6 }}>Optional — without it, your board stays on this browser only.</div>
+                  <div className="hint" style={{ marginTop: 6 }}>Optional. Without it, your board stays on this browser only.</div>
                 </div>
               )
             ) : (
@@ -557,7 +557,7 @@ function StepsPanel({ card, busy, focusAddId, onGenerate, onToggleStep, onDelete
             {busy ? <><span className="spin" />Thinking…</> : 'Generate steps'}
           </button>
         </div>
-        <p className="steps-or">— or build the list yourself —</p>
+        <p className="steps-or">or build the list yourself</p>
         {manualAdd}
       </div>
     );

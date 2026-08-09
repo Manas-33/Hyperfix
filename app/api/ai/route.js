@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-// Emails allowed to use the AI endpoint — set ALLOWED_EMAILS (comma-separated)
+// Emails allowed to use the AI endpoint. Set ALLOWED_EMAILS (comma-separated)
 // in .env.local and in Vercel. If unset, access is denied to everyone.
 function allowedEmails() {
   const raw = process.env.ALLOWED_EMAILS;
@@ -27,7 +27,7 @@ async function verifyCaller(req) {
   } catch (e) {
     return { ok: false, code: 502, error: 'Could not verify sign-in.' };
   }
-  if (!res.ok) return { ok: false, code: 401, error: 'Session expired — sign in again.' };
+  if (!res.ok) return { ok: false, code: 401, error: 'Session expired. Sign in again.' };
 
   const data = await res.json();
   const u = data.users && data.users[0];
