@@ -90,7 +90,7 @@ kbd{font-family:var(--display);font-size:.78rem;font-weight:600;color:var(--ink)
 /* Focus mode — spotlight the one thing, dim the rest. Click outside to exit. */
 .focus-backdrop{position:fixed;inset:0;background:rgba(10,7,4,.8);backdrop-filter:blur(2.5px);z-index:40;animation:pop .18s ease}
 /* Lift just the task card out of the (dimmed) column and zoom it in. */
-.wrap.focusmode .col.doing .card{z-index:50;transform:scale(1.14);transform-origin:center;
+.wrap.focusmode .col.doing .card{z-index:50;transform:scale(1.4);transform-origin:center;
   transition:transform .26s cubic-bezier(.34,1.4,.5,1)}
 @media(prefers-reduced-motion:reduce){.wrap.focusmode .col.doing .card{transform:none}}
 
