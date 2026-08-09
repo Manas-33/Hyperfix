@@ -219,7 +219,7 @@ export default function Page() {
       const f = findCard(b, id); if (!f) return;
       if (to === 'doing' && f.col !== 'doing' && b.doing.length >= b.limit) { toast('One thing at a time. Finish or free up In Progress first.'); return; }
       b[f.col].splice(f.idx, 1);
-      if (to === 'done') b.cleared++;
+      if (to === 'done' && !f.card.counted) { b.cleared++; f.card.counted = true; }
       b[to].push(f.card);
     });
   }
@@ -272,7 +272,7 @@ export default function Page() {
       const crossIn = colId !== f.col;
       if (colId === 'doing' && crossIn && b.doing.length >= b.limit) { toast('In Progress is full. Reorder within it, or finish something.'); return; }
       const [card] = b[f.col].splice(f.idx, 1);
-      if (colId === 'done' && crossIn) b.cleared++;
+      if (colId === 'done' && crossIn && !card.counted) { b.cleared++; card.counted = true; }
       let idx = afterId == null ? b[colId].length : b[colId].findIndex((c) => c.id === afterId);
       if (idx < 0) idx = b[colId].length;
       b[colId].splice(idx, 0, card);
