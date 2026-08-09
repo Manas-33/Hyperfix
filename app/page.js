@@ -314,7 +314,7 @@ export default function Page() {
     <div className="wrap">
       <header className="top">
         <div>
-          <h1>Clear your head</h1>
+          <h1>Hyperfix</h1>
           <div className="flow">Dump it all out <span className="arrow">→</span> pick <b>one thing</b> <span className="arrow">→</span> done</div>
         </div>
         <div className="head-right">

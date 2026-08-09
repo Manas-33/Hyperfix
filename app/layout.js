@@ -1,7 +1,7 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'Clear your head',
+  title: 'Hyperfix',
   description: 'Brain-dump to-do board with AI organizing and step breakdowns.',
 };
 

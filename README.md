@@ -1,4 +1,4 @@
-# Clear your head
+# Hyperfix
 
 A calm, single-focus to-do board. Dump every half-formed thought into one box,
 let AI turn it into clean tasks, then pick one thing to work on and finish it.
