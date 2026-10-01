@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { firebaseReady, getAuthI, getDb, getProvider } from '../lib/firebase';
+import { useSoundEffects } from '../lib/useSoundEffects';
 
 const COLS = [
   { id: 'todo', title: 'To Do', dot: 'todo' },
@@ -38,9 +39,47 @@ function findCard(board, id) {
   return null;
 }
 
+function Icon({ name, size = 18 }) {
+  const paths = {
+    grid: 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
+    focus: 'M8 3H3v5 M16 3h5v5 M21 16v5h-5 M8 21H3v-5 M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8',
+    plus: 'M12 5v14 M5 12h14',
+    arrow: 'M5 12h14 M13 6l6 6-6 6',
+    check: 'M5 12l4 4L19 6',
+    search: 'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14 M15 15l6 6',
+    spark: 'm12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z',
+    settings: 'M4 7h16 M4 17h16 M8 4v6 M16 14v6',
+    keyboard: 'M3 5h18v14H3z M7 9h.01 M12 9h.01 M17 9h.01 M7 13h.01 M12 13h.01 M17 13h.01 M8 16h8',
+    edit: 'm15 5 4 4 M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z',
+    mic: 'M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0z M5 11v1a7 7 0 0 0 14 0v-1 M12 19v3 M8 22h8',
+    close: 'm6 6 12 12 M6 18 18 6',
+    inbox: 'M4 4h16l2 12v4H2v-4Z M2 16h6l2 3h4l2-3h6',
+    sound: 'M11 4 6 8H3v8h3l5 4Z M15 8a6 6 0 0 1 0 8 M18 5a10 10 0 0 1 0 14',
+    muted: 'M11 4 6 8H3v8h3l5 4Z M16 9l6 6 M16 15l6-6',
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name] || paths.spark} /></svg>;
+}
+
+function Dialog({ title, onClose, children }) {
+  const ref = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const previous = document.activeElement;
+    const dialog = ref.current;
+    dialog.showModal();
+    return () => { dialog.close(); previous?.focus(); };
+  }, []);
+  return <dialog className="modal" ref={ref} aria-label={title} onCancel={(e) => { e.preventDefault(); closeRef.current(); }} onClick={(e) => { if (e.target === ref.current) { const r = ref.current.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) onClose(); } }}>
+    <button className="dialog-close gear" onClick={onClose} aria-label="Close dialog"><Icon name="close" /></button>{children}
+  </dialog>;
+}
+
 export default function Page() {
+  const { soundEnabled, toggleSound, playSound, unlockSound } = useSoundEffects();
   const [board, setBoard] = useState(null);        // null = still loading
   const [model, setModel] = useState(MODELS[0][0]);
+  const [theme, setTheme] = useState('system');
   const [user, setUser] = useState(null);
   const [authKnown, setAuthKnown] = useState(!firebaseReady);
   const [dump, setDump] = useState('');
@@ -50,6 +89,8 @@ export default function Page() {
   const [toastMsg, setToastMsg] = useState(null);
   const [focusMode, setFocusMode] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [undo, setUndo] = useState(null);
   const dumpRef = useRef(null);
 
   const applyingRemote = useRef(false);
@@ -73,7 +114,10 @@ export default function Page() {
     try { const raw = localStorage.getItem(BOARD_KEY); if (raw) b = JSON.parse(raw); } catch (e) {}
     setBoard(normalize(b));
     try { const m = localStorage.getItem(MODEL_KEY); if (m) setModel(m); } catch (e) {}
+    try { const t = localStorage.getItem('cyh:theme'); if (['light', 'dark', 'system'].includes(t)) setTheme(t); } catch (e) {}
   }, []);
+
+  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
 
   // ---- auth ----
   useEffect(() => {
@@ -181,20 +225,25 @@ export default function Page() {
     lines = lines.map((s) => s.trim()).filter(Boolean);
     if (!lines.length) return;
     mutate((b) => { lines.forEach((t) => b.todo.push({ id: uid(), text: t, steps: null, stepsOpen: false, instr: '' })); });
+    playSound('add');
   }
   function addPlain() {
     if (!dump.trim()) return;
     addLines(dump.split('\n'));
     setDump('');
+    setQuery('');
+    toast('Added to your board.');
   }
   async function organize() {
     if (!dump.trim()) { toast('Dump some thoughts first.'); return; }
+    unlockSound();
     setOrganizing(true);
     try {
       const items = await callAI('organize', dump.trim());
       if (!items.length) { toast('No tasks found in that.'); return; }
       addLines(items);
       setDump('');
+      setQuery('');
       toast('Added ' + items.length + ' task' + (items.length > 1 ? 's' : '') + ' ✨');
     } catch (e) { toast(e.message, true); }
     finally { setOrganizing(false); }
@@ -202,6 +251,7 @@ export default function Page() {
 
   const [busySteps, setBusySteps] = useState(null); // card id currently generating
   async function generateSteps(id, instr) {
+    unlockSound();
     setBusySteps(id);
     try {
       const f = findCard(board, id); if (!f) return;
@@ -213,11 +263,15 @@ export default function Page() {
         g.card.instr = instr || '';
         g.card.stepsOpen = true; g.card.regenOpen = false; g.card.listCollapsed = false;
       });
+      playSound('add');
     } catch (e) { toast(e.message, true); }
     finally { setBusySteps(null); }
   }
 
   function move(id, to) {
+    const found = findCard(board, id);
+    if (!found || found.col === to) return;
+    if (to === 'doing' && board.doing.length >= board.limit) { toast('One thing at a time. Finish or free up In Progress first.'); return; }
     mutate((b) => {
       const f = findCard(b, id); if (!f) return;
       if (to === 'doing' && f.col !== 'doing' && b.doing.length >= b.limit) { toast('One thing at a time. Finish or free up In Progress first.'); return; }
@@ -227,14 +281,34 @@ export default function Page() {
       else if (f.col === 'done' && to !== 'done') b.cleared = Math.max(0, b.cleared - 1);
       b[to].push(f.card);
     });
+    playSound(to === 'done' ? 'complete' : 'start');
   }
-  function del(id) { mutate((b) => { const f = findCard(b, id); if (!f) return; if (f.col === 'done') b.cleared = Math.max(0, b.cleared - 1); b[f.col].splice(f.idx, 1); }); }
+  function del(id) {
+    const found = findCard(board, id);
+    if (!found) return;
+    setUndo({ cards: [{ col: found.col, idx: found.idx, card: clone(found.card) }], cleared: found.col === 'done' ? 1 : 0 });
+    mutate((b) => { const f = findCard(b, id); if (!f) return; if (f.col === 'done') b.cleared = Math.max(0, b.cleared - 1); b[f.col].splice(f.idx, 1); });
+    playSound('remove');
+  }
   function editText(id, text) { const t = text.trim(); if (!t) return; mutate((b) => { const f = findCard(b, id); if (f) f.card.text = t; }); }
   function setLimit(n) { mutate((b) => { b.limit = n; }); }
-  function clearDone() { mutate((b) => { b.done = []; }); }
+  function clearDone() {
+    setUndo({ cards: board.done.map((card, idx) => ({ col: 'done', idx, card: clone(card) })), cleared: 0 });
+    mutate((b) => { b.done = []; });
+  }
+  function restore() {
+    mutate((b) => { undo.cards.forEach(({ col, idx, card }) => { if (!findCard(b, card.id)) { const destination = col === 'doing' && b.doing.length >= b.limit ? 'todo' : col; b[destination].splice(idx, 0, card); } }); b.cleared += undo.cleared; });
+    setUndo(null);
+    playSound('add');
+  }
 
   function toggleSteps(id) { mutate((b) => { const f = findCard(b, id); if (f) f.card.stepsOpen = !f.card.stepsOpen; }); }
-  function toggleStep(id, i) { mutate((b) => { const f = findCard(b, id); if (f && f.card.steps) f.card.steps[i].done = !f.card.steps[i].done; }); }
+  function toggleStep(id, i) {
+    const step = findCard(board, id)?.card.steps?.[i];
+    if (!step) return;
+    mutate((b) => { const f = findCard(b, id); if (f?.card.steps?.[i]) f.card.steps[i].done = !f.card.steps[i].done; });
+    if (!step.done) playSound('tick');
+  }
   function deleteStep(id, i) { mutate((b) => { const f = findCard(b, id); if (f && f.card.steps) { f.card.steps.splice(i, 1); if (!f.card.steps.length) f.card.steps = null; } }); }
   function addStep(id, text) { const t = (text || '').trim(); if (!t) return; focusAddId.current = id; mutate((b) => { const f = findCard(b, id); if (f) { if (!f.card.steps) f.card.steps = []; f.card.steps.push({ text: t, done: false }); } }); }
   function toggleStepList(id) { mutate((b) => { const f = findCard(b, id); if (f) f.card.listCollapsed = !f.card.listCollapsed; }); }
@@ -272,6 +346,9 @@ export default function Page() {
     const after = dragAfter(e.currentTarget, e.clientY);
     const afterId = after ? after.dataset.id : null;
     const id = dragId.current;
+    const found = findCard(board, id);
+    if (!found) return;
+    if (colId === 'doing' && found.col !== 'doing' && board.doing.length >= board.limit) { toast('In Progress is full. Reorder within it, or finish something.'); return; }
     mutate((b) => {
       const f = findCard(b, id); if (!f) return;
       const crossIn = colId !== f.col;
@@ -284,6 +361,7 @@ export default function Page() {
       if (idx < 0) idx = b[colId].length;
       b[colId].splice(idx, 0, card);
     });
+    playSound(colId === 'done' && found.col !== 'done' ? 'complete' : 'tick');
   }
 
   // ---- auth actions ----
@@ -322,7 +400,13 @@ export default function Page() {
       toast('Pick one thing to focus on first.');
       return;
     }
+    setQuery('');
     setFocusMode((f) => !f);
+  }
+
+  function capture() {
+    setFocusMode(false);
+    requestAnimationFrame(() => dumpRef.current?.focus());
   }
 
   // Keyboard shortcuts. All single-key ones are ignored while typing in a field.
@@ -337,9 +421,9 @@ export default function Page() {
         if (focusMode) { setFocusMode(false); return; }
         return;
       }
-      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (typing || settingsOpen || helpOpen || el?.tagName === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFocus(); }
-      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); dumpRef.current?.focus(); }
+      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); capture(); }
       else if (e.key === 's' || e.key === 'S') {
         e.preventDefault();
         if (board && board.todo.length) move(board.todo[0].id, 'doing');
@@ -357,98 +441,68 @@ export default function Page() {
 
   const micSupported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
+  const total = board.todo.length + board.doing.length + board.done.length;
+  const progress = total ? Math.round(board.done.length / total * 100) : 0;
+  const filtered = Object.fromEntries(COLS.map(({ id }) => [id, board[id].filter((card) => card.text.toLowerCase().includes(query.trim().toLowerCase()))]));
+
   return (
-    <div className={'wrap' + (focusMode ? ' focusmode' : '')}>
-      {focusMode && <div className="focus-backdrop" onClick={() => setFocusMode(false)} />}
-      <header className="top">
-        <div>
-          <h1>Hyperfix</h1>
-          <div className="flow">Dump it all out <span className="arrow">→</span> pick <b>one thing</b> <span className="arrow">→</span> done</div>
-        </div>
-        <div className="head-right">
-          <div className="cleared">✓ <span>{board.cleared}</span> cleared today</div>
-          {firebaseReady && (
-            user
-              ? <>
-                  <span className="sync-pill">✓ Synced</span>
-                  <button className="signbtn" onClick={signOutNow} title="Sign out">
-                    {user.photoURL && <img className="avatar" src={user.photoURL} alt="" />}
-                    Sign out
-                  </button>
-                </>
-              : authKnown && <button className="signbtn" onClick={signIn}>Sign in to sync</button>
-          )}
-          {!firebaseReady && <span className="sync-pill local">Local only</span>}
-          <button
-            className={'focusbtn' + (focusMode ? ' on' : '')}
-            onClick={toggleFocus}
-            title={focusMode ? 'Show the whole board' : 'Hide everything but the one thing'}
-          >
-            {focusMode ? '← Show all' : '◎ Focus'}
-          </button>
-          <button className="gear" onClick={() => setHelpOpen(true)} title="Keyboard shortcuts (?)">⌨</button>
-          <button className="gear" onClick={() => setSettingsOpen(true)} title="Settings">⚙</button>
-        </div>
-      </header>
-
-      <div className="dump">
-        <p className="dump-label">Brain dump <small>(just empty your head, AI sorts it into clean tasks)</small></p>
-        <div className="ta-wrap">
-          <textarea
-            ref={dumpRef}
-            className="dumpbox"
-            value={dump}
-            onChange={(e) => setDump(e.target.value)}
-            onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); organize(); } }}
-            placeholder={"reply to Sam and also send him the q3 numbers\nbook dentist sometime\nthat thing for the report is due\nbuy milk eggs bread\n..."}
-          />
-          {micSupported && (
-            <button className={'mic' + (listening ? ' live' : '')} onClick={toggleMic} title="Dictate">🎤</button>
-          )}
-        </div>
-        <div className="dump-row">
-          <span className="hint">Everything lands in To Do. Pick one to focus.</span>
-          <div className="dump-btns">
-            <button className="btn btn-ghost" onClick={addPlain} title="Add each line as-is, no AI">Add as-is</button>
-            <button className="btn btn-primary" onClick={organize} disabled={organizing}>
-              {organizing ? <><span className="spin" />Organizing…</> : '✨ Organize with AI'}
-            </button>
+    <div className={'workspace' + (focusMode ? ' focusmode' : '')}>
+      <main className="main">
+        <header className="topbar">
+          <a className="brand" href="/" aria-label="Hyperfix home"><span className="brand-mark">✳</span>HYPERFIX<span className="brand-tag">A LITTLE LESS SCATTERED.</span></a>
+          <nav className="view-switch" aria-label="Workspace views">
+            <button className={!focusMode ? 'selected' : ''} onClick={() => { setFocusMode(false); setQuery(''); }} aria-pressed={!focusMode}>The board</button>
+            <button className={focusMode ? 'selected' : ''} onClick={toggleFocus} aria-pressed={focusMode}><Icon name="focus" size={16} /> Focus <kbd>F</kbd></button>
+          </nav>
+          <div className="head-right">
+            {firebaseReady && !user && authKnown && <button className="signbtn" onClick={signIn}>Sign in <Icon name="arrow" size={15} /></button>}
+            {user && <button className="account-button" onClick={() => setSettingsOpen(true)} aria-label="Account settings">{user.photoURL ? <img className="avatar" src={user.photoURL} alt="" /> : (user.displayName || 'You').slice(0, 1)}</button>}
+            <button className="gear sound-toggle" onClick={toggleSound} aria-label="Sound effects" aria-pressed={soundEnabled} title={soundEnabled ? 'Mute sound effects' : 'Enable sound effects'}><Icon name={soundEnabled ? 'sound' : 'muted'} /></button>
+            <button className="gear" onClick={() => setHelpOpen(true)} aria-label="Keyboard shortcuts"><Icon name="keyboard" /></button>
+            <button className="gear" onClick={() => setSettingsOpen(true)} aria-label="Settings"><Icon name="settings" /></button>
           </div>
-        </div>
-      </div>
-
+        </header>
+        <div className="content">
+          <section className="board-section" id="task-board" aria-label="Task board">
+            <div className="board-toolbar"><h1>{focusMode ? 'In the moment' : 'The workbench'} <span>{board.todo.length + board.doing.length} open</span></h1>
+              <label className="search"><Icon name="search" size={17} /><input type="search" aria-label="Search tasks" placeholder="Find a task…" value={query} onChange={(e) => setQuery(e.target.value)} />{query && <button aria-label="Clear search" onClick={() => setQuery('')}><Icon name="close" size={14} /></button>}</label>
+              <button className="capture-link" onClick={capture}><Icon name="plus" size={16} /> Capture a thought <kbd>D</kbd></button>
+            </div>
+            {query && <p className="search-result" role="status">{Object.values(filtered).reduce((sum, cards) => sum + cards.length, 0)} matching tasks <button className="link-btn" onClick={() => setQuery('')}>Show all tasks</button></p>}
       <div className="board">
         {COLS.map((c) => (
           <div
             key={c.id}
             className={'col ' + c.id}
+            aria-label={c.title}
             onDragOver={onColDragOver}
             onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.classList.remove('drag-over', 'drop-end'); }}
             onDrop={(e) => onColDrop(e, c.id)}
           >
             <div className="col-head">
-              <div className="col-title"><span className={'dot ' + c.dot} />{c.title}</div>
+              <h3 className="col-title"><span className="col-number">{c.id === 'todo' ? '01' : c.id === 'doing' ? '02' : '03'}</span>{c.id === 'doing' ? 'In focus' : c.title}</h3>
               {c.id === 'doing'
                 ? <span className={'count' + (board.doing.length >= board.limit ? ' full' : '')}>{board.doing.length} / {board.limit}</span>
                 : <span className="count">{board[c.id].length}</span>}
               {c.id === 'done' && board.done.length > 0 && (
-                <button className="clear-done" onClick={clearDone}>clear all</button>
+                <button className="clear-done" onClick={clearDone}>Clear</button>
               )}
             </div>
 
             {c.id === 'doing' && (
               <div className="limit">
-                focus limit
+                Focus limit
                 {[1, 2, 3].map((n) => (
-                  <button key={n} className={board.limit === n ? 'on' : ''} onClick={() => setLimit(n)}>{n}</button>
+                  <button key={n} className={board.limit === n ? 'on' : ''} onClick={() => setLimit(n)} aria-label={"Focus limit: " + n} aria-pressed={board.limit === n}>{n}</button>
                 ))}
               </div>
             )}
 
-            {board[c.id].length > 0
-              ? board[c.id].map((card) => (
+            {filtered[c.id].length > 0
+              ? filtered[c.id].map((card) => (
                   <Card
                     key={card.id}
+                    canDrag={!query.trim()}
                     card={card}
                     col={c.id}
                     busySteps={busySteps}
@@ -469,19 +523,50 @@ export default function Page() {
                   />
                 ))
               : <div className="empty">
-                  {c.id === 'todo' ? 'Head’s clear. Dump something above.'
-                    : c.id === 'doing' ? 'Nothing in progress. Pick ONE thing to start.'
-                    : 'Finished things land here.'}
+                  <span className="empty-icon"><Icon name={c.id === 'todo' ? 'inbox' : c.id === 'doing' ? 'focus' : 'check'} size={24} /></span>
+                  <strong>{query ? 'No matching tasks' : c.id === 'todo' ? 'A fresh start' : c.id === 'doing' ? 'Find your one thing' : 'Room for your wins'}</strong>
+                  <p>{query ? 'Try a different word or clear your search.' : c.id === 'todo' ? 'Capture what’s on your mind. It all starts here.' : c.id === 'doing' ? 'Start a task from To Do and give it a little space.' : 'Good work goes here. Big or small, it counts.'}</p>
+                  {!query && c.id === 'todo' && <button className="empty-action" onClick={capture}><Icon name="plus" size={15} /> Add your first task</button>}
+                  {!query && c.id === 'doing' && board.todo.length > 0 && <button className="empty-action" onClick={() => move(board.todo[0].id, 'doing')}>Start next task <Icon name="arrow" size={15} /></button>}
                 </div>}
           </div>
         ))}
       </div>
+      <div className="board-footer"><span><Icon name="check" size={14} /> Your board saves automatically</span><button onClick={() => setHelpOpen(true)}>Work a little faster <kbd>?</kbd></button></div>
+      </section>
+          <div className="overview">
+            <section className="dump" aria-labelledby="capture-title">
+              <div className="note-label"><span>THE SCRATCHPAD</span><Icon name="edit" size={17} /></div>
+              <div className="section-label"><h2 id="capture-title">Off your mind.<br /><em>Onto the page.</em></h2></div>
+              <p className="capture-description">Messy thoughts welcome. Add one task per line, or let AI untangle them.</p>
+              <div className="ta-wrap">
+                <textarea ref={dumpRef} aria-label="Brain dump" className="dumpbox" value={dump} disabled={organizing}
+                  onChange={(e) => setDump(e.target.value)}
+                  onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); if (!organizing) { if (e.shiftKey) organize(); else addPlain(); } } }}
+                  placeholder={"Reply to that email…\nThat idea I had earlier…\nThe thing I keep putting off…"} />
+                {micSupported && <button className={'mic' + (listening ? ' live' : '')} disabled={organizing} onClick={toggleMic} aria-label={listening ? 'Stop dictation' : 'Dictate thoughts'} aria-pressed={listening}><Icon name="mic" /></button>}
+              </div>
+              <div className="dump-row"><div className="dump-btns">
+                <button className="btn btn-ghost" onClick={organize} disabled={organizing || !dump.trim()} title={user ? 'Turn your thoughts into tasks' : 'Google sign-in required for AI'}><Icon name="spark" size={16} />{organizing ? 'Organizing…' : 'Organize with AI'}</button>
+                <button className="btn btn-primary" onClick={addPlain} disabled={organizing || !dump.trim()} title="Add each line as a task (⌘/Ctrl + Enter)">Add tasks <Icon name="arrow" size={16} /></button>
+              </div></div>
+              {!user && <div className="ai-note">AI organizing requires sign-in. Adding tasks is always available.</div>}
+            </section>
+            <section className="progress-card" aria-label="Board progress">
+              <div className="progress-top"><span>A LITTLE PROGRESS</span><Icon name="check" size={16} /></div>
+              <div className="progress-number">{board.done.length}<span> / {total}</span><div>loose ends tied up</div></div>
+              <div className="progress-track" role="progressbar" aria-label="Tasks completed" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: progress + '%' }} /></div>
+              <p>{total === 0 ? 'Every clear head starts with one small step.' : progress === 100 ? 'Look at that. A little more space to breathe.' : board.doing.length ? 'You’ve found your focus. Keep going.' : 'Pick a task below. One is enough.'}</p>
+            </section>
+          </div>
+
+      </div>
+      </main>
 
       {settingsOpen && (
-        <div className="overlay" onClick={(e) => { if (e.target.classList.contains('overlay')) setSettingsOpen(false); }}>
-          <div className="modal">
+        <Dialog title="Settings" onClose={() => setSettingsOpen(false)}>
             <h2>Settings</h2>
-            <p className="sub">Your AI key lives on the server, never in this browser.</p>
+            <p className="sub">Make this workspace your own.</p>
 
             {firebaseReady ? (
               user ? (
@@ -500,6 +585,16 @@ export default function Page() {
             )}
 
             <div className="field">
+              <label htmlFor="themeSel">Appearance</label>
+              <select id="themeSel" value={theme} onChange={(e) => { setTheme(e.target.value); try { localStorage.setItem('cyh:theme', e.target.value); } catch (err) {} }}>
+                <option value="system">Match device</option><option value="light">Light</option><option value="dark">Dark</option>
+              </select>
+            </div>
+            <div className="field">
+              <div className="sound-setting"><div><span className="setting-label">Sound effects</span><p className="hint">Soft cues for tasks and checklists. Saved on this device.</p></div><button className="sound-switch" role="switch" aria-checked={soundEnabled} aria-label="Sound effects" onClick={toggleSound}><span /></button></div>
+              <button className="sound-preview" onClick={() => playSound('complete')} disabled={!soundEnabled}><Icon name="sound" size={14} /> Preview completion sound</button>
+            </div>
+            <div className="field">
               <label htmlFor="modelSel">AI model</label>
               <select id="modelSel" value={model} onChange={(e) => saveModel(e.target.value)}>
                 {MODELS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
@@ -513,13 +608,11 @@ export default function Page() {
                 : <span />}
               <button className="btn btn-primary" onClick={() => setSettingsOpen(false)}>Done</button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
 
       {helpOpen && (
-        <div className="overlay" onClick={(e) => { if (e.target.classList.contains('overlay')) setHelpOpen(false); }}>
-          <div className="modal">
+        <Dialog title="Keyboard shortcuts" onClose={() => setHelpOpen(false)}>
             <h2>Keyboard shortcuts</h2>
             <p className="sub">Work the board without touching the mouse.</p>
             <ul className="keylist">
@@ -528,16 +621,17 @@ export default function Page() {
               <li><kbd>F</kbd><span>Focus mode — spotlight the one thing</span></li>
               <li><kbd>Esc</kbd><span>Exit focus mode / close dialogs</span></li>
               <li><kbd>?</kbd><span>Show or hide this list</span></li>
-              <li><kbd>⌘/Ctrl</kbd><kbd>↵</kbd><span>Organize the brain dump with AI</span></li>
+              <li><kbd>⌘/Ctrl</kbd><kbd>↵</kbd><span>Add each line as a task</span></li>
+              <li><kbd>⌘/Ctrl</kbd><kbd>Shift</kbd><kbd>↵</kbd><span>Organize thoughts with AI</span></li>
             </ul>
             <div className="modal-row" style={{ justifyContent: 'flex-end' }}>
               <button className="btn btn-primary" onClick={() => setHelpOpen(false)}>Got it</button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
 
-      <div className={'toast' + (toastMsg ? ' show' : '') + (toastMsg && toastMsg.isErr ? ' err' : '')}>
+      {undo && <div className="undo-bar" role="status"><span>{undo.cards.length === 1 ? 'Task removed' : 'Completed tasks cleared'}</span><button onClick={restore}>Undo</button><button className="undo-dismiss" aria-label="Dismiss undo" onClick={() => setUndo(null)}><Icon name="close" size={15} /></button></div>}
+      <div role="status" aria-live="polite" className={'toast' + (toastMsg ? ' show' : '') + (toastMsg && toastMsg.isErr ? ' err' : '')}>
         {toastMsg && toastMsg.msg}
       </div>
     </div>
@@ -545,7 +639,7 @@ export default function Page() {
 }
 
 // ---------------- Card ----------------
-function Card({ card, col, busySteps, focusAddId, dragId, clearMarkers, onMove, onDel, onEdit, onToggleSteps, onGenerate, onToggleStep, onDeleteStep, onAddStep, onToggleList, onToggleRegen, onSetInstr }) {
+function Card({ card, col, canDrag, busySteps, focusAddId, dragId, clearMarkers, onMove, onDel, onEdit, onToggleSteps, onGenerate, onToggleStep, onDeleteStep, onAddStep, onToggleList, onToggleRegen, onSetInstr }) {
   const textRef = useRef(null);
   const [editing, setEditing] = useState(false);
 
@@ -554,11 +648,12 @@ function Card({ card, col, busySteps, focusAddId, dragId, clearMarkers, onMove, 
   return (
     <div
       className="card"
-      draggable
+      draggable={canDrag && !editing}
       data-id={card.id}
       onDragStart={(e) => { dragId.current = card.id; e.currentTarget.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }}
       onDragEnd={(e) => { e.currentTarget.classList.remove('dragging'); dragId.current = null; clearMarkers(); }}
     >
+      <div className="card-meta"><span>{col === 'doing' ? 'ONE THING AT A TIME' : col === 'done' ? 'NICELY DONE' : 'UP NEXT'}</span><button className="edit-task" aria-label={'Edit ' + card.text} title="Edit task" onClick={() => { setEditing(true); setTimeout(() => { textRef.current?.focus(); document.getSelection()?.selectAllChildren(textRef.current); }, 0); }}><Icon name="edit" size={14} /></button></div>
       <div
         className="card-text"
         ref={textRef}
@@ -566,7 +661,7 @@ function Card({ card, col, busySteps, focusAddId, dragId, clearMarkers, onMove, 
         contentEditable={editing}
         suppressContentEditableWarning
         onDoubleClick={() => { setEditing(true); setTimeout(() => { textRef.current && textRef.current.focus(); document.getSelection().selectAllChildren(textRef.current); }, 0); }}
-        onBlur={(e) => { setEditing(false); onEdit(card.id, e.currentTarget.textContent); }}
+        onBlur={(e) => { const text = e.currentTarget.textContent.trim(); if (!text) e.currentTarget.textContent = card.text; setEditing(false); onEdit(card.id, text); }}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
       >{card.text}</div>
 
@@ -574,11 +669,11 @@ function Card({ card, col, busySteps, focusAddId, dragId, clearMarkers, onMove, 
         {col === 'todo' && <button className="chip go" onClick={() => onMove(card.id, 'doing')}>Start →</button>}
         {col === 'doing' && <>
           <button className="chip icon" title="Back to To Do" onClick={() => onMove(card.id, 'todo')}>←</button>
-          <button className="chip done icon" title="Mark done" onClick={() => onMove(card.id, 'done')}>✓</button>
+          <button className="chip done" onClick={() => onMove(card.id, 'done')}><Icon name="check" size={14} /> Complete</button>
         </>}
         {col === 'done' && <button className="chip" onClick={() => onMove(card.id, 'todo')}>↩ Reopen</button>}
-        {col !== 'done' && !hasSteps && <button className="chip ai" onClick={() => onToggleSteps(card.id)}>⚡ Break down</button>}
-        <button className="x" title="Delete" onClick={() => onDel(card.id)}>×</button>
+        {col !== 'done' && !hasSteps && <button className="chip ai" onClick={() => onToggleSteps(card.id)}><Icon name="spark" size={13} /> Break into steps</button>}
+        <button className="x" aria-label={"Delete " + card.text} title="Delete task" onClick={() => onDel(card.id)}>×</button>
       </div>
 
       {(hasSteps || card.stepsOpen) && (
@@ -611,10 +706,10 @@ function StepsPanel({ card, busy, focusAddId, onGenerate, onToggleStep, onDelete
     if (focusAddId.current === card.id) { focusAddId.current = null; addRef.current && addRef.current.focus(); }
   });
 
-  const commitAdd = () => { if (addText.trim()) { onAddStep(card.id, addText); setAddText(''); } };
+  const commitAdd = () => { if (addText.trim()) { onAddStep(card.id, addText); setAddText(''); setEditSteps(true); } };
   const manualAdd = (
     <div className="step-add">
-      <input ref={addRef} type="text" placeholder="add a step yourself…" value={addText}
+      <input ref={addRef} type="text" aria-label="Add a step" placeholder="add a step yourself…" value={addText}
         onChange={(e) => setAddText(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitAdd(); } }} />
       <button className="add-btn" onClick={commitAdd}>Add</button>
@@ -625,7 +720,7 @@ function StepsPanel({ card, busy, focusAddId, onGenerate, onToggleStep, onDelete
     return (
       <div className="steps">
         <div className="steps-instr">
-          <textarea placeholder='optional: how detailed? any constraints? (e.g. "beginner, under 5 steps")'
+          <textarea aria-label="Step instructions" placeholder='optional: how detailed? any constraints? (e.g. "beginner, under 5 steps")'
             value={localInstr}
             onChange={(e) => setLocalInstr(e.target.value)}
             onBlur={() => onSetInstr(card.id, localInstr)} />
@@ -658,7 +753,7 @@ function StepsPanel({ card, busy, focusAddId, onGenerate, onToggleStep, onDelete
         <ul className="steplist">
           {card.steps.map((s, i) => (
             <li key={i} className={s.done ? 'checked' : ''}>
-              <input type="checkbox" checked={!!s.done} onChange={() => onToggleStep(card.id, i)} />
+              <input type="checkbox" aria-label={s.text} checked={!!s.done} onChange={() => onToggleStep(card.id, i)} />
               <span>{s.text}</span>
               {editSteps && <button className="step-x" title="Delete step" onClick={() => onDeleteStep(card.id, i)}>×</button>}
             </li>
@@ -672,7 +767,7 @@ function StepsPanel({ card, busy, focusAddId, onGenerate, onToggleStep, onDelete
           </button>
           {card.regenOpen && (
             <div className="steps-instr" style={{ marginTop: 8 }}>
-              <textarea placeholder="refine: extra instructions to regenerate…"
+              <textarea aria-label="Regenerate instructions" placeholder="refine: extra instructions to regenerate…"
                 value={localInstr}
                 onChange={(e) => setLocalInstr(e.target.value)}
                 onBlur={() => onSetInstr(card.id, localInstr)} />
